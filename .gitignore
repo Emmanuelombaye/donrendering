@@ -7,8 +7,6 @@ __pycache__/
 *$py.class
 
 # Environment Variables (CRITICAL: Do not upload your tokens)
-.env
-.env.local
 .env.*.local
 
 # Local Storage
@@ -18,7 +16,6 @@ tmp/
 /tmp/
 
 # IDEs
-.vscode/
 .idea/
 
 # OS Files
@@ -35,3 +32,4 @@ images2/
 !visoid-frontend/public/*.png
 !visoid-frontend/public/*.jpg
 !visoid-frontend/public/*.ico
+config.bat

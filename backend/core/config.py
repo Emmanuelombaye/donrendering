@@ -15,3 +15,6 @@ else:
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Pricing configuration
+COST_PER_RENDER_KES = int(os.getenv("COST_PER_RENDER_KES", 53))

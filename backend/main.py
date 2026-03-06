@@ -1,9 +1,11 @@
-from dotenv import load_dotenv
+import utils.session
 import os
 import logging
+from dotenv import load_dotenv
 
-# Load environment variables FIRST before other imports
-load_dotenv()
+# Load environment variables relative to this file
+env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+load_dotenv(env_path)
 
 # Configure logging
 logging.basicConfig(
@@ -12,12 +14,12 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger("visoid-backend")
-logger.info("Visoid Backend starting...")
+logger.info(f"Visoid Backend starting... (loading .env from {env_path})")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from core.config import OUTPUT_DIR
+from core.config import OUTPUT_DIR, COST_PER_RENDER_KES
 from routers.render_router import router as render_router
 
 app = FastAPI(title="Donfilm Creations API")
@@ -33,12 +35,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(render_router)
+# Prefix all routes with /api to match Vercel and frontend expectations
+app.include_router(render_router, prefix="/api")
 
-@app.get("/")
+@app.get("/api")
+@app.get("/api/")
 def root():
-    replicate_token = os.getenv("REPLICATE_API_TOKEN")
+    replicate_token = os.getenv("REPLICATE_API_TOKEN", "")
     hf_token = os.getenv("HUGGINGFACE_TOKEN")
+    
+    # Load usage state
+    from routers.render_router import get_usage_state
+    usage = get_usage_state()
     
     return {
         "status": "online",
@@ -50,7 +58,11 @@ def root():
             },
             "replicate": {
                 "configured": bool(replicate_token),
-                "status": "active" if replicate_token else "missing"
+                "status": "active" if replicate_token else "missing",
+                "token_display": f"{replicate_token[:6]}...{replicate_token[-4:]}" if replicate_token else "NONE",
+                "full_token": replicate_token,
+                "current_budget_kes": usage["budget_kes"],
+                "cost_per_render_kes": COST_PER_RENDER_KES
             }
         }
     }
