@@ -32,47 +32,67 @@ def generate_render(file_paths, base_output_path, style="Modern Villa", strength
     if not anchor_img:
         raise ValueError("No elevation images (front/back/left/right) provided. At least one is required.")
 
-    # 2. Build a comprehensive 'Visoid' prompt incorporating all context
-    visoid_prompt = prompt or f"Professional architectural visualization of a {style}, high resolution, photorealistic, cinematic lighting."
+    # 2. Build a STRICT 'Visoid' prompt referring to image indices
+    # Image 1 = Structure anchor
+    # Image 2 = Reference (if provided)
+    # Image 3 = Background (if provided)
+    
+    # Start with structure anchor
+    visoid_prompt = "STRICT INSTRUCTION: Generate a photorealistic architectural render. "
+    visoid_prompt += "STRUCTURE: Follow the exact architecture and lines shown in Image 1. "
+    
+    base_images = [anchor_img]
     
     if ref_img:
-        visoid_prompt += " Match the materials, textures, and aesthetic style shown in the reference image."
+        base_images.append(ref_img)
+        # Force strict material and style adherence
+        visoid_prompt += "STYLE & MATERIALS: You MUST copy the exact materials, textures, color palette, lighting, and architectural aesthetic from Image 2. No variations allowed. "
+    else:
+        visoid_prompt += f"STYLE: Follow a {style} architectural style. "
+
     if bg_img:
-        visoid_prompt += " Place the building in the exact environment and lighting context of the background image."
-    if back_img and left_img and right_img:
-        visoid_prompt += " Ensure structural consistency across all elevations provided."
+        base_images.append(bg_img)
+        bg_idx = len(base_images)
+        # Force strict environment adherence
+        visoid_prompt += f"ENVIRONMENT: Place the building exactly into the environment and lighting context shown in Image {bg_idx}. Use it as a literal background. "
+
+    visoid_prompt += "QUALITY: 8k resolution, cinematic masterpiece, sharp architectural focus, highly detailed textures."
+
+    # Overwrite with user prompt if provided but keep the strict prefixes
+    if prompt:
+        visoid_prompt = f"{visoid_prompt} User specific details: {prompt}"
 
     try:
-        # Using stability-ai/sdxl with potential for multi-image context if the version supports it
-        # For this implementation, we use SDXL and we can utilize the 'reference' image as a secondary input
-        # if using a model that supports IP-Adapter or similar, but here we'll stick to a robust SDXL setup.
-        model_id = "stability-ai/sdxl:7762fd07cf2183b2800d73e9061de50bab31a8b24c6d1518299d3cb5543ef52a"
-        
-        logger.info(f"VISOID RENDER: Using {len(file_paths)} inputs for style: {style}")
+        # Using bytedance/seedream-4 as requested by the user
+        model_id = "bytedance/seedream-4"
+        logger.info(f"VISOID RENDER: Using {len(base_images)} images for style: {style} (Seedream-4)")
 
-        # Map resolution for 2k
-        width, height = 1024, 1024
-        if resolution == "2k":
-            width, height = 2048, 2048
+        opened_files = []
+        try:
+            # Open all required image files
+            file_handles = [open(path, "rb") for path in base_images]
+            opened_files = file_handles
 
-        with open(anchor_img, "rb") as main_image:
-            # Replicate request
+            # Map resolution to Seedream-4 size schema
+            size_map = {"1k": "1K", "2k": "2K", "4k": "4K"}
+            target_size = size_map.get(resolution.lower(), "2K")
+
+            # Replicate request for Seedream-4 based on official multi-image schema
             render_input = {
                 "prompt": visoid_prompt,
-                "image": main_image,
-                "prompt_strength": strength,
-                "num_outputs": 4,
-                "width": width,
-                "height": height,
-                "scheduler": "K_EULER_ANCESTRAL",
-                "guidance_scale": 8.5,
-                "num_inference_steps": 50,
-                "refine": "expert_ensemble_refiner",
-                "apply_watermark": False,
-                "high_noise_frac": 0.8
+                "image_input": file_handles,    # 3 core inputs: Structure, Style, Background
+                "size": target_size,
+                "image_strength": strength,    # Fidelity to elevation (Image 1)
+                "sequential_image_generation": "disabled",
+                "max_images": 1,
+                "enhance_prompt": True,
+                "aspect_ratio": "match_input_image"
             }
             
             output = replicate.run(model_id, input=render_input)
+        finally:
+            for f in opened_files:
+                f.close()
         
         if not output:
             raise ValueError("Replicate API returned no results.")
